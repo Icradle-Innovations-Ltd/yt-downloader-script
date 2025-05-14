@@ -1,0 +1,55 @@
+# YouTube Downloader Script .gitignore
+
+# Downloaded media files - keep the folder structure but ignore content
+Downloads/VideoWithAudio/*
+Downloads/VideoOnly/*
+Downloads/AudioOnly/*
+Downloads/SubtitlesOnly/*
+# Keep the folders themselves
+!Downloads/
+!Downloads/VideoWithAudio/
+!Downloads/VideoOnly/
+!Downloads/AudioOnly/
+!Downloads/SubtitlesOnly/
+
+# Logs - keep the folder but ignore content
+Logs/*
+*.log
+# Keep the folder itself
+!Logs/
+
+# Configuration files that may contain user-specific settings
+ytdl_config.json
+
+# Temporary files
+*.part
+*.temp
+*.tmp
+
+# FFmpeg binaries (large files that should be downloaded separately)
+ffmpeg/bin/*
+!ffmpeg/bin/.gitkeep
+
+# yt-dlp executable (should be downloaded separately)
+yt-dlp.exe
+
+# Windows specific files
+Thumbs.db
+desktop.ini
+
+# PowerShell specific
+*.ps1.bak
+
+# Visual Studio Code specific
+.vscode/
+*.code-workspace
+
+# Python cache files (if any Python scripts are used)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Backup files
+*~
+*.bak
+*.swp
