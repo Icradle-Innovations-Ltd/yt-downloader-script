@@ -171,7 +171,8 @@ function Get-YtDlpCommand {
 function Get-FFmpegArgs {
     param (
         [string]$HWAccel,
-        [string]$MediaType = "video"  # "video" or "audio"
+        [string]$MediaType = "video",  # "video" or "audio"
+        [switch]$MobileOptimized = $true  # Default to mobile-optimized settings
     )
     
     $ffmpegArgs = "-nostats -loglevel 0"
@@ -180,34 +181,52 @@ function Get-FFmpegArgs {
         switch ($HWAccel) {
             "nvidia" {
                 if ($MediaType -eq "video") {
-                    # Specific optimized settings for NVIDIA GPUs for video
-                    # Use p4 preset for balanced quality and speed (p1=fastest, p7=highest quality)
-                    # Add -threads for multi-threading
-                    # Use higher quality settings while maintaining good performance
-                    $ffmpegArgs = "-hwaccel cuda -hwaccel_output_format cuda -c:v h264_nvenc -preset p4 -tune hq -rc:v vbr_hq -cq:v 18 -b:v 0 -maxrate:v 15M -bufsize:v 30M -threads 8 -nostats -loglevel 0"
-                    Write-Log "Using balanced NVIDIA GPU acceleration for high quality and good performance" Cyan
+                    if ($MobileOptimized) {
+                        # Mobile-optimized settings for NVIDIA GPUs for video with better compatibility
+                        # Use p2 preset for faster encoding (p1=fastest, p7=highest quality)
+                        # Lower bitrate and buffer size for better playback on mobile devices
+                        # Add -pix_fmt yuv420p for better compatibility
+                        $ffmpegArgs = "-hwaccel cuda -hwaccel_output_format cuda -c:v h264_nvenc -preset p2 -tune hq -rc:v vbr_hq -cq:v 23 -b:v 2M -maxrate:v 4M -bufsize:v 8M -pix_fmt yuv420p -threads 8 -nostats -loglevel 0"
+                        Write-Log "Using mobile-optimized NVIDIA GPU acceleration for smooth playback on all devices" Cyan
+                    } else {
+                        # High-quality settings for NVIDIA GPUs for video
+                        $ffmpegArgs = "-hwaccel cuda -hwaccel_output_format cuda -c:v h264_nvenc -preset p4 -tune hq -rc:v vbr_hq -cq:v 18 -b:v 0 -maxrate:v 15M -bufsize:v 30M -threads 8 -nostats -loglevel 0"
+                        Write-Log "Using balanced NVIDIA GPU acceleration for high quality and good performance" Cyan
+                    }
                 } else {
                     # Specific optimized settings for NVIDIA GPUs for audio
                     # Use ultrafast preset and optimized audio encoding settings
-                    # Add -c:a libmp3lame for direct MP3 encoding
-                    # Add -qscale:a for variable bitrate encoding (faster)
-                    # Add -threads for multi-threading
                     $ffmpegArgs = "-hwaccel cuda -hwaccel_output_format cuda -c:v h264_nvenc -preset p1 -tune hq -c:a libmp3lame -qscale:a 2 -ar 44100 -ac 2 -threads 8 -nostats -loglevel 0"
                     Write-Log "Using high-performance NVIDIA GPU acceleration for audio processing" Cyan
                 }
             }
             "cuda" {
-                $ffmpegArgs = "-hwaccel cuda -hwaccel_output_format cuda -c:v h264_nvenc -preset p7 -tune hq -nostats -loglevel 0"
-                Write-Log "Using NVIDIA CUDA acceleration for $MediaType processing" Cyan
+                if ($MediaType -eq "video" -and $MobileOptimized) {
+                    $ffmpegArgs = "-hwaccel cuda -hwaccel_output_format cuda -c:v h264_nvenc -preset p2 -tune hq -rc:v vbr_hq -cq:v 23 -b:v 2M -maxrate:v 4M -bufsize:v 8M -pix_fmt yuv420p -threads 8 -nostats -loglevel 0"
+                    Write-Log "Using mobile-optimized CUDA acceleration for smooth playback on all devices" Cyan
+                } else {
+                    $ffmpegArgs = "-hwaccel cuda -hwaccel_output_format cuda -c:v h264_nvenc -preset p4 -tune hq -nostats -loglevel 0"
+                    Write-Log "Using NVIDIA CUDA acceleration for $MediaType processing" Cyan
+                }
             }
             "nvenc" {
-                $ffmpegArgs = "-c:v h264_nvenc -preset p7 -tune hq -nostats -loglevel 0"
-                Write-Log "Using NVIDIA NVENC acceleration for $MediaType processing" Cyan
+                if ($MediaType -eq "video" -and $MobileOptimized) {
+                    $ffmpegArgs = "-c:v h264_nvenc -preset p2 -tune hq -rc:v vbr_hq -cq:v 23 -b:v 2M -maxrate:v 4M -bufsize:v 8M -pix_fmt yuv420p -threads 8 -nostats -loglevel 0"
+                    Write-Log "Using mobile-optimized NVENC acceleration for smooth playback on all devices" Cyan
+                } else {
+                    $ffmpegArgs = "-c:v h264_nvenc -preset p4 -tune hq -nostats -loglevel 0"
+                    Write-Log "Using NVIDIA NVENC acceleration for $MediaType processing" Cyan
+                }
             }
             "amf" {
                 if ($MediaType -eq "video") {
-                    $ffmpegArgs = "-hwaccel amf -c:v h264_amf -quality speed -nostats -loglevel 0"
-                    Write-Log "Using AMD AMF acceleration for video processing" Cyan
+                    if ($MobileOptimized) {
+                        $ffmpegArgs = "-hwaccel amf -c:v h264_amf -quality balanced -rc vbr_peak -qp_i 26 -qp_p 28 -b:v 2M -maxrate 4M -bufsize 8M -pix_fmt yuv420p -threads 8 -nostats -loglevel 0"
+                        Write-Log "Using mobile-optimized AMD AMF acceleration for smooth playback on all devices" Cyan
+                    } else {
+                        $ffmpegArgs = "-hwaccel amf -c:v h264_amf -quality speed -nostats -loglevel 0"
+                        Write-Log "Using AMD AMF acceleration for video processing" Cyan
+                    }
                 } else {
                     # Optimized settings for AMD GPUs for audio
                     $ffmpegArgs = "-hwaccel amf -c:v h264_amf -quality speed -c:a libmp3lame -qscale:a 2 -ar 44100 -ac 2 -threads 8 -nostats -loglevel 0"
@@ -216,8 +235,13 @@ function Get-FFmpegArgs {
             }
             "qsv" {
                 if ($MediaType -eq "video") {
-                    $ffmpegArgs = "-hwaccel qsv -hwaccel_output_format qsv -c:v h264_qsv -preset fast -nostats -loglevel 0"
-                    Write-Log "Using Intel QuickSync acceleration for video processing" Cyan
+                    if ($MobileOptimized) {
+                        $ffmpegArgs = "-hwaccel qsv -hwaccel_output_format qsv -c:v h264_qsv -preset medium -b:v 2M -maxrate 4M -bufsize 8M -pix_fmt yuv420p -threads 8 -nostats -loglevel 0"
+                        Write-Log "Using mobile-optimized Intel QuickSync acceleration for smooth playback on all devices" Cyan
+                    } else {
+                        $ffmpegArgs = "-hwaccel qsv -hwaccel_output_format qsv -c:v h264_qsv -preset fast -nostats -loglevel 0"
+                        Write-Log "Using Intel QuickSync acceleration for video processing" Cyan
+                    }
                 } else {
                     # Optimized settings for Intel GPUs for audio
                     $ffmpegArgs = "-hwaccel qsv -hwaccel_output_format qsv -c:v h264_qsv -preset veryfast -c:a libmp3lame -qscale:a 2 -ar 44100 -ac 2 -threads 8 -nostats -loglevel 0"
@@ -225,16 +249,34 @@ function Get-FFmpegArgs {
                 }
             }
             "d3d11va" {
-                $ffmpegArgs = "-hwaccel d3d11va -nostats -loglevel 0"
-                Write-Log "Using DirectX 11 acceleration for $MediaType processing" Cyan
+                if ($MediaType -eq "video" -and $MobileOptimized) {
+                    # For DirectX 11, we need to use a software encoder after hardware decoding for better control
+                    $ffmpegArgs = "-hwaccel d3d11va -c:v libx264 -preset medium -crf 23 -maxrate 4M -bufsize 8M -pix_fmt yuv420p -threads 8 -nostats -loglevel 0"
+                    Write-Log "Using mobile-optimized DirectX 11 acceleration for smooth playback on all devices" Cyan
+                } else {
+                    $ffmpegArgs = "-hwaccel d3d11va -nostats -loglevel 0"
+                    Write-Log "Using DirectX 11 acceleration for $MediaType processing" Cyan
+                }
             }
             "dxva2" {
-                $ffmpegArgs = "-hwaccel dxva2 -nostats -loglevel 0"
-                Write-Log "Using DirectX Video Acceleration for $MediaType processing" Cyan
+                if ($MediaType -eq "video" -and $MobileOptimized) {
+                    # For DXVA2, we need to use a software encoder after hardware decoding for better control
+                    $ffmpegArgs = "-hwaccel dxva2 -c:v libx264 -preset medium -crf 23 -maxrate 4M -bufsize 8M -pix_fmt yuv420p -threads 8 -nostats -loglevel 0"
+                    Write-Log "Using mobile-optimized DirectX Video Acceleration for smooth playback on all devices" Cyan
+                } else {
+                    $ffmpegArgs = "-hwaccel dxva2 -nostats -loglevel 0"
+                    Write-Log "Using DirectX Video Acceleration for $MediaType processing" Cyan
+                }
             }
             default {
-                $ffmpegArgs = "-nostats -loglevel 0"
-                Write-Log "Using standard processing for $MediaType" Yellow
+                if ($MediaType -eq "video" -and $MobileOptimized) {
+                    # Software encoding optimized for mobile
+                    $ffmpegArgs = "-c:v libx264 -preset medium -crf 23 -maxrate 4M -bufsize 8M -pix_fmt yuv420p -threads 8 -nostats -loglevel 0"
+                    Write-Log "Using mobile-optimized software encoding for smooth playback on all devices" Yellow
+                } else {
+                    $ffmpegArgs = "-nostats -loglevel 0"
+                    Write-Log "Using standard processing for $MediaType" Yellow
+                }
             }
         }
     }
@@ -787,12 +829,12 @@ try {
             $output = Join-Path $fullPath "%(title)s_${actualHeight}p_%(upload_date>%Y%m%d)s.%(ext)s"
             Write-Log "Downloading video with audio (${actualHeight}p MP4)..." Green
             
-            # Get ffmpeg arguments for hardware acceleration
-            $ffmpegArgs = Get-FFmpegArgs -HWAccel $hwAccel -MediaType "video"
+            # Get ffmpeg arguments for hardware acceleration with mobile optimization
+            $ffmpegArgs = Get-FFmpegArgs -HWAccel $hwAccel -MediaType "video" -MobileOptimized $true
             
-            # Add specific post-processing arguments for balanced speed and quality
-            $postProcessArgs = "-threads 8 -preset medium -movflags faststart+frag_keyframe+empty_moov -max_muxing_queue_size 4096"
-            Write-Log "Using balanced merging settings for high quality and good performance" Green
+            # Add specific post-processing arguments optimized for mobile playback with better compatibility
+            $postProcessArgs = "-threads 8 -preset medium -movflags faststart+frag_keyframe+empty_moov -max_muxing_queue_size 4096 -pix_fmt yuv420p"
+            Write-Log "Using mobile-optimized settings for smooth playback on all devices" Green
             
             # Use try-catch to handle errors
             try {
@@ -818,12 +860,25 @@ try {
                     Invoke-Expression $ytDlpCmd
                     Write-Log "Video download completed successfully!" Green
                 }
-                # If there's an error with the post-processing arguments
-                elseif ($_.Exception.Message -match "post-process|ppa") {
-                    Write-Log "Issue with post-processing arguments. Retrying with standard settings..." Yellow
-                    $ytDlpCmd = Get-YtDlpCommand -Format $format -Output $output -Url $url -FfmpegArgs $ffmpegArgs -PostProcessArgs "" -PlaylistFlag $playlistFlag -ConcurrentFragments $config.MaxConcurrentFragments -BufferSize $config.BufferSize -SubtitleLanguage $config.SubtitleLanguage
-                    Invoke-Expression $ytDlpCmd
-                    Write-Log "Video download completed successfully!" Green
+                # If there's an error with the post-processing arguments or output files
+                elseif ($_.Exception.Message -match "post-process|ppa|Error opening output files|Invalid argument") {
+                    Write-Log "Issue with post-processing arguments or output file. Retrying with simplified settings..." Yellow
+                    
+                    # First try with no post-processing arguments
+                    $ytDlpCmd = Get-YtDlpCommand -Format $format -Output $output -Url $url -FfmpegArgs "-c copy" -PostProcessArgs "" -PlaylistFlag $playlistFlag -ConcurrentFragments $config.MaxConcurrentFragments -BufferSize $config.BufferSize -SubtitleLanguage $config.SubtitleLanguage
+                    
+                    try {
+                        Invoke-Expression $ytDlpCmd
+                        Write-Log "Video download completed successfully with simplified settings!" Green
+                    }
+                    catch {
+                        # If that fails, try with the most basic settings possible
+                        Write-Log "Still having issues. Trying with basic format and no special encoding..." Yellow
+                        $basicOutput = Join-Path $fullPath "%(title)s_basic_%(upload_date>%Y%m%d)s.mp4"
+                        $basicCmd = "yt-dlp.exe -f 'best[ext=mp4]/best' --merge-output-format mp4 $playlistFlag --retries 10 --fragment-retries 10 --continue --no-part -o `"$basicOutput`" `"$url`""
+                        Invoke-Expression $basicCmd
+                        Write-Log "Video download completed with basic settings!" Green
+                    }
                 }
                 # If there's a connection timeout or network error
                 elseif ($_.Exception.Message -match "timed out|timeout|connection|reset|refused|network|HTTPSConnectionPool") {
@@ -914,12 +969,12 @@ try {
             $output = Join-Path $videoPath "%(title)s_${actualHeight}p_video_%(upload_date>%Y%m%d)s.%(ext)s"
             Write-Log "Downloading video only (${actualHeight}p MP4)..." Green
             
-            # Get ffmpeg arguments for hardware acceleration
-            $ffmpegArgs = Get-FFmpegArgs -HWAccel $hwAccel -MediaType "video"
+            # Get ffmpeg arguments for hardware acceleration with mobile optimization
+            $ffmpegArgs = Get-FFmpegArgs -HWAccel $hwAccel -MediaType "video" -MobileOptimized $true
             
-            # Add specific post-processing arguments for balanced speed and quality
-            $postProcessArgs = "-threads 8 -preset medium -movflags faststart+frag_keyframe+empty_moov -max_muxing_queue_size 4096"
-            Write-Log "Using balanced merging settings for high quality and good performance" Green
+            # Add specific post-processing arguments optimized for mobile playback with better compatibility
+            $postProcessArgs = "-threads 8 -preset medium -movflags faststart+frag_keyframe+empty_moov -max_muxing_queue_size 4096 -pix_fmt yuv420p"
+            Write-Log "Using mobile-optimized settings for smooth playback on all devices" Green
             
             try {
                 # Use our new function to generate the command with correct parameters
@@ -943,12 +998,25 @@ try {
                     Invoke-Expression $ytDlpCmd
                     Write-Log "Video download completed successfully!" Green
                 }
-                # If there's an error with the post-processing arguments
-                elseif ($_.Exception.Message -match "post-process|ppa") {
-                    Write-Log "Issue with post-processing arguments. Retrying with standard settings..." Yellow
-                    $ytDlpCmd = Get-YtDlpCommand -Format $format -Output $output -Url $url -FfmpegArgs $ffmpegArgs -PostProcessArgs "" -PlaylistFlag $playlistFlag -ConcurrentFragments $config.MaxConcurrentFragments -BufferSize $config.BufferSize -SubtitleLanguage $config.SubtitleLanguage -VideoOnly
-                    Invoke-Expression $ytDlpCmd
-                    Write-Log "Video download completed successfully!" Green
+                # If there's an error with the post-processing arguments or output files
+                elseif ($_.Exception.Message -match "post-process|ppa|Error opening output files|Invalid argument") {
+                    Write-Log "Issue with post-processing arguments or output file. Retrying with simplified settings..." Yellow
+                    
+                    # First try with no post-processing arguments
+                    $ytDlpCmd = Get-YtDlpCommand -Format $format -Output $output -Url $url -FfmpegArgs "-c copy" -PostProcessArgs "" -PlaylistFlag $playlistFlag -ConcurrentFragments $config.MaxConcurrentFragments -BufferSize $config.BufferSize -SubtitleLanguage $config.SubtitleLanguage -VideoOnly
+                    
+                    try {
+                        Invoke-Expression $ytDlpCmd
+                        Write-Log "Video download completed successfully with simplified settings!" Green
+                    }
+                    catch {
+                        # If that fails, try with the most basic settings possible
+                        Write-Log "Still having issues. Trying with basic format and no special encoding..." Yellow
+                        $basicOutput = Join-Path $videoPath "%(title)s_basic_video_%(upload_date>%Y%m%d)s.mp4"
+                        $basicCmd = "yt-dlp.exe -f 'bestvideo[ext=mp4]' $playlistFlag --retries 10 --fragment-retries 10 --continue --no-part -o `"$basicOutput`" `"$url`""
+                        Invoke-Expression $basicCmd
+                        Write-Log "Video download completed with basic settings!" Green
+                    }
                 }
                 # If there's a connection timeout or network error
                 elseif ($_.Exception.Message -match "timed out|timeout|connection|reset|refused|network|HTTPSConnectionPool") {
@@ -1012,8 +1080,8 @@ try {
             # Get ffmpeg arguments for hardware acceleration with optimized audio settings
             $ffmpegArgs = Get-FFmpegArgs -HWAccel $hwAccel -MediaType "audio"
             
-            # Add specific post-processing arguments for balanced audio quality and speed
-            $postProcessArgs = "-threads 8 -preset medium -movflags faststart -af aresample=async=1:min_hard_comp=0.100000:first_pts=0"
+            # Add specific post-processing arguments for better audio compatibility and quality
+            $postProcessArgs = "-threads 8 -preset medium -movflags faststart -af aresample=async=1:min_hard_comp=0.100000:first_pts=0 -ar 44100 -ac 2 -id3v2_version 3 -write_id3v1 1"
             
             # Increase the number of concurrent fragments specifically for audio
             $audioFragments = [math]::Min(64, $config.MaxConcurrentFragments * 2)
@@ -1134,17 +1202,27 @@ try {
                     Invoke-Expression $ytDlpCmd
                     Write-Log "Audio download completed successfully!" Green
                 }
-                # If there's an error with the M4A to MP3 conversion
+                # If there's an error with the M4A to MP3 conversion or output files
                 elseif ($_.Exception.Message -match "Error opening output files|Invalid argument|FixupM4a") {
-                    Write-Log "Issue with M4A to MP3 conversion. Using direct ffmpeg conversion..." Yellow
+                    Write-Log "Issue with audio conversion or output files. Using direct ffmpeg conversion..." Yellow
                     
-                    # First download the audio in its original format
-                    $tempOutput = Join-Path $audioPath "%(title)s_temp_%(upload_date>%Y%m%d)s.%(ext)s"
-                    $tempCmd = "yt-dlp.exe -f bestaudio --no-extract-audio $playlistFlag --ffmpeg-location $ffmpegPath --retries 10 --continue --progress --newline -o `"$tempOutput`" `"$url`""
-                    Invoke-Expression $tempCmd
-                    
-                    # Get the downloaded file path
-                    $downloadedFile = Get-ChildItem -Path $audioPath -Filter "*_temp_*" | Select-Object -First 1
+                    try {
+                        # First try with simplified settings
+                        $simpleCmd = "yt-dlp.exe -f 'bestaudio' --extract-audio --audio-format mp3 --audio-quality $ytQuality $playlistFlag --retries 10 --continue --progress --newline -o `"$output`" `"$url`""
+                        Invoke-Expression $simpleCmd
+                        Write-Log "Audio download completed with simplified settings!" Green
+                    }
+                    catch {
+                        Write-Log "Still having issues. Trying with two-step conversion process..." Yellow
+                        
+                        # First download the audio in its original format
+                        $tempOutput = Join-Path $audioPath "%(title)s_temp_%(upload_date>%Y%m%d)s.%(ext)s"
+                        $tempCmd = "yt-dlp.exe -f bestaudio --no-extract-audio $playlistFlag --ffmpeg-location $ffmpegPath --retries 10 --continue --progress --newline -o `"$tempOutput`" `"$url`""
+                        Invoke-Expression $tempCmd
+                        
+                        # Get the downloaded file path
+                        $downloadedFile = Get-ChildItem -Path $audioPath -Filter "*_temp_*" | Select-Object -First 1
+                    }
                     
                     if ($downloadedFile) {
                         $finalOutput = $output -replace "%\(title\)s", $downloadedFile.BaseName.Split('_')[0]
